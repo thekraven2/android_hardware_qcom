@@ -34,7 +34,7 @@
 
 #include <hardware/hardware.h>
 #include <hardware/gralloc.h>
-#include "../libgenlock/genlock.h"
+#include <genlock.h>
 
 #include <linux/android_pmem.h>
 
