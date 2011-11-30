@@ -140,6 +140,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
             return err;
         }
 
+        hnd->lockState  = 0;
+        hnd->writeOwner = 0;
         // Reset the genlock private fd flag in the handle
         hnd->genlockPrivFd = -1;
 
@@ -176,12 +178,19 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
 
     private_handle_t* hnd = (private_handle_t*)handle;
 
+    LOGE_IF(hnd->lockState & private_handle_t::LOCK_STATE_READ_MASK,
+            "[unregister] handle %p still locked (state=%08x)",
+            hnd, hnd->lockState);
+
     // never unmap buffers that were created in this process
     if (hnd->pid != getpid()) {
-        if (hnd->base != 0) {
+        if (hnd->lockState & private_handle_t::LOCK_STATE_MAPPED) {
             gralloc_unmap(module, handle);
         }
         hnd->base = 0;
+        hnd->lockState  = 0;
+        hnd->writeOwner = 0;
+
         // Release the genlock
         if (-1 != hnd->genlockHandle) {
             return genlock_release_lock((native_handle_t *)handle);
@@ -201,7 +210,11 @@ int terminateBuffer(gralloc_module_t const* module,
      * to un-map it. It's an error to be here with a locked buffer.
      */
 
-    if (hnd->base != 0) {
+    LOGE_IF(hnd->lockState & private_handle_t::LOCK_STATE_READ_MASK,
+            "[terminate] handle %p still locked (state=%08x)",
+            hnd, hnd->lockState);
+
+    if (hnd->lockState & private_handle_t::LOCK_STATE_MAPPED) {
         // this buffer was mapped, unmap it now
         if (hnd->flags & (private_handle_t::PRIV_FLAGS_USES_PMEM |
                           private_handle_t::PRIV_FLAGS_USES_PMEM_ADSP |
@@ -232,43 +245,70 @@ int gralloc_lock(gralloc_module_t const* module,
 
     int err = 0;
     private_handle_t* hnd = (private_handle_t*)handle;
+    int32_t current_value, new_value;
+    int retry;
+
+    do {
+        current_value = hnd->lockState;
+        new_value = current_value;
+
+        if (current_value & private_handle_t::LOCK_STATE_WRITE) {
+            // already locked for write
+            LOGE("handle %p already locked for write", handle);
+            return -EBUSY;
+        } else if (current_value & private_handle_t::LOCK_STATE_READ_MASK) {
+            // already locked for read
+            if (usage & (GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_RENDER)) {
+                LOGE("handle %p already locked for read", handle);
+                return -EBUSY;
+            } else {
+                // this is not an error
+                //LOGD("%p already locked for read... count = %d",
+                //        handle, (current_value & ~(1<<31)));
+            }
+        }
+
+        // not currently locked
+        if (usage & (GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_RENDER)) {
+            // locking for write
+            new_value |= private_handle_t::LOCK_STATE_WRITE;
+        }
+        new_value++;
+
+        retry = android_atomic_cmpxchg(current_value, new_value,
+                (volatile int32_t*)&hnd->lockState);
+    } while (retry);
+
+    if (new_value & private_handle_t::LOCK_STATE_WRITE) {
+        // locking for write, store the tid
+        hnd->writeOwner = gettid();
+    }
+
+    // if requesting sw write for non-framebuffer handles, flag for
+    // flushing at unlock
+
+    if ((usage & GRALLOC_USAGE_SW_WRITE_MASK) &&
+            !(hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER)) {
+        hnd->flags |= private_handle_t::PRIV_FLAGS_NEEDS_FLUSH;
+    }
+
     if (usage & (GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK)) {
-        if (hnd->base == 0) {
+        if (!(current_value & private_handle_t::LOCK_STATE_MAPPED)) {
             // we need to map for real
             pthread_mutex_t* const lock = &sMapLock;
             pthread_mutex_lock(lock);
-            err = gralloc_map(module, handle, vaddr);
+            if (!(hnd->lockState & private_handle_t::LOCK_STATE_MAPPED)) {
+                err = gralloc_map(module, handle, vaddr);
+                if (err == 0) {
+                    android_atomic_or(private_handle_t::LOCK_STATE_MAPPED,
+                            (volatile int32_t*)&(hnd->lockState));
+                }
+            }
             pthread_mutex_unlock(lock);
         }
         *vaddr = (void*)hnd->base;
-
-        // Lock the buffer for read/write operation as specified. Write lock
-        // has a higher priority over read lock.
-        int lockType = 0;
-        if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
-            lockType = GENLOCK_WRITE_LOCK;
-        } else if (usage & GRALLOC_USAGE_SW_READ_MASK) {
-            lockType = GENLOCK_READ_LOCK;
-        }
-
-        int timeout = GENLOCK_MAX_TIMEOUT;
-        if (GENLOCK_FAILURE == genlock_lock_buffer((native_handle_t *)handle,
-                                                   (genlock_lock_type)lockType,
-                                                   timeout)) {
-            LOGE("%s: genlock_lock_buffer (lockType=0x%x) failed", __FUNCTION__,
-                lockType);
-            return -EINVAL;
-        } else {
-            // Mark this buffer as locked for SW read/write operation.
-            hnd->flags |= private_handle_t::PRIV_FLAGS_SW_LOCK;
-        }
-
-        if ((usage & GRALLOC_USAGE_SW_WRITE_MASK) &&
-            !(hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER)) {
-            // Mark the buffer to be flushed after cpu read/write
-            hnd->flags |= private_handle_t::PRIV_FLAGS_NEEDS_FLUSH;
-        }
     }
+
     return err;
 }
 
@@ -279,6 +319,7 @@ int gralloc_unlock(gralloc_module_t const* module,
         return -EINVAL;
 
     private_handle_t* hnd = (private_handle_t*)handle;
+    int32_t current_value, new_value;
 
     if (hnd->flags & private_handle_t::PRIV_FLAGS_NEEDS_FLUSH) {
         int err;
@@ -290,14 +331,28 @@ int gralloc_unlock(gralloc_module_t const* module,
         hnd->flags &= ~private_handle_t::PRIV_FLAGS_NEEDS_FLUSH;
     }
 
-    if ((hnd->flags & private_handle_t::PRIV_FLAGS_SW_LOCK)) {
-        // Unlock the buffer.
-        if (GENLOCK_FAILURE == genlock_unlock_buffer((native_handle_t *)handle)) {
-            LOGE("%s: genlock_unlock_buffer failed", __FUNCTION__);
+    do {
+        current_value = hnd->lockState;
+        new_value = current_value;
+
+        if (current_value & private_handle_t::LOCK_STATE_WRITE) {
+            // locked for write
+            if (hnd->writeOwner == gettid()) {
+                hnd->writeOwner = 0;
+                new_value &= ~private_handle_t::LOCK_STATE_WRITE;
+            }
+        }
+
+        if ((new_value & private_handle_t::LOCK_STATE_READ_MASK) == 0) {
+            LOGE("handle %p not locked", handle);
             return -EINVAL;
-        } else
-            hnd->flags &= ~private_handle_t::PRIV_FLAGS_SW_LOCK;
-    }
+        }
+
+        new_value--;
+
+    } while (android_atomic_cmpxchg(current_value, new_value,
+                (volatile int32_t*)&hnd->lockState));
+
     return 0;
 }
 
