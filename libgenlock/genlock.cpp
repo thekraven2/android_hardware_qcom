@@ -29,8 +29,8 @@
 
 #include <cutils/log.h>
 #include <cutils/native_handle.h>
-#include <gralloc_priv.h>
-#include <linux/genlock.h>
+#include "../libgralloc/gralloc_priv.h"
+//#include <linux/genlock.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
