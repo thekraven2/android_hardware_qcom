@@ -107,13 +107,13 @@ PmemUserspaceAlloc::~PmemUserspaceAlloc()
 
 int PmemUserspaceAlloc::init_pmem_area_locked()
 {
-    LOGD("%s: Opening master pmem FD", __FUNCTION__);
+    //LOGD("%s: Opening master pmem FD", __FUNCTION__);
     int err = 0;
     int fd = open(mPmemDev, O_RDWR, 0);
     if (fd >= 0) {
         size_t size = 0;
         err = getPmemTotalSize(fd, &size);
-        LOGD("%s: Total pmem size: %d", __FUNCTION__, size);
+        //LOGD("%s: Total pmem size: %d", __FUNCTION__, size);
         if (err < 0) {
             LOGE("%s: PMEM_GET_TOTAL_SIZE failed (%d), limp mode", mPmemDev,
                     err);
@@ -148,7 +148,7 @@ int  PmemUserspaceAlloc::init_pmem_area()
     int err = mMasterFd;
     if (err == FD_INIT) {
         // first time, try to initialize pmem
-        LOGD("%s: Initializing pmem area", __FUNCTION__);
+        //LOGD("%s: Initializing pmem area", __FUNCTION__);
         err = init_pmem_area_locked();
         if (err) {
             LOGE("%s: failed to initialize pmem area", mPmemDev);
@@ -199,8 +199,8 @@ int PmemUserspaceAlloc::alloc_buffer(alloc_data& data)
                 mAllocator->deallocate(offset);
                 fd = -1;
             } else {
-                LOGD("%s: Allocated buffer base:%p size:%d offset:%d fd:%d",
-                        mPmemDev, base, size, offset, fd);
+                //LOGD("%s: Allocated buffer base:%p size:%d offset:%d fd:%d",
+                //        mPmemDev, base, size, offset, fd);
                 memset((char*)base + offset, 0, size);
                 //Clean cache before flushing to ensure pmem is properly flushed
                 err = clean_buffer((void*)((intptr_t) base + offset), size, offset, fd);
@@ -220,8 +220,8 @@ int PmemUserspaceAlloc::alloc_buffer(alloc_data& data)
 
 int PmemUserspaceAlloc::free_buffer(void* base, size_t size, int offset, int fd)
 {
-    LOGD("%s: Freeing buffer base:%p size:%d offset:%d fd:%d",
-            mPmemDev, base, size, offset, fd);
+    //LOGD("%s: Freeing buffer base:%p size:%d offset:%d fd:%d",
+    //        mPmemDev, base, size, offset, fd);
     int err = 0;
     if (fd >= 0) {
         int err = unmapSubRegion(fd, offset, size);
@@ -246,12 +246,12 @@ int PmemUserspaceAlloc::map_buffer(void **pBase, size_t size, int offset, int fd
             MAP_SHARED, fd, 0);
     *pBase = base;
     if(base == MAP_FAILED) {
-        LOGD("%s: Failed to map memory in the client: %s",
-                mPmemDev, strerror(errno));
+        //LOGD("%s: Failed to map memory in the client: %s",
+        //        mPmemDev, strerror(errno));
         err = -errno;
     } else {
-        LOGD("%s: Mapped buffer base:%p size:%d offset:%d fd:%d",
-                mPmemDev, base, size, offset, fd);
+        //LOGD("%s: Mapped buffer base:%p size:%d offset:%d fd:%d",
+        //        mPmemDev, base, size, offset, fd);
     }
     return err;
 
@@ -263,8 +263,8 @@ int PmemUserspaceAlloc::unmap_buffer(void *base, size_t size, int offset)
     //pmem hack
     base = (void*)(intptr_t(base) - offset);
     size += offset;
-    LOGD("%s: Unmapping buffer base:%p size:%d offset:%d",
-            mPmemDev , base, size, offset);
+    //LOGD("%s: Unmapping buffer base:%p size:%d offset:%d",
+    //        mPmemDev , base, size, offset);
     if (munmap(base, size) < 0) {
         LOGE("Could not unmap %s", strerror(errno));
         err = -errno;
@@ -342,11 +342,11 @@ int PmemKernelAlloc::map_buffer(void **pBase, size_t size, int offset, int fd)
             MAP_SHARED, fd, 0);
     *pBase = base;
     if(base == MAP_FAILED) {
-        LOGD("%s: Failed to map memory in the client: %s",
-                __func__, strerror(errno));
+        //LOGD("%s: Failed to map memory in the client: %s",
+        //        __func__, strerror(errno));
         err = -errno;
     } else {
-        LOGD("%s: Mapped %d bytes", __func__, size);
+        //LOGD("%s: Mapped %d bytes", __func__, size);
     }
     return err;
 
@@ -358,7 +358,7 @@ int PmemKernelAlloc::unmap_buffer(void *base, size_t size, int offset)
     munmap(base, size);
     if (err < 0) {
         err = -errno;
-        LOGW("Error unmapping pmem fd: %s", strerror(err));
+        //LOGW("Error unmapping pmem fd: %s", strerror(err));
     }
     return err;
 

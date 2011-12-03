@@ -24,9 +24,7 @@ ifeq ($(TARGET_USES_C2D_COMPOSITION),true)
     LOCAL_SHARED_LIBRARIES := liblog libdl
     LOCAL_SRC_FILES := copybit_c2d.cpp
     LOCAL_MODULE := copybit.$(TARGET_BOARD_PLATFORM)
-    LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
-    LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
-    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
+    LOCAL_C_INCLUDES += hardware/qcom/libgralloc
     LOCAL_CFLAGS += -DCOPYBIT_Z180=1 -DC2D_SUPPORT_DISPLAY=1
     LOCAL_MODULE_TAGS := optional
     include $(BUILD_SHARED_LIBRARY)
@@ -51,9 +49,7 @@ else
             LOCAL_SRC_FILES := software_converter.cpp copybit.cpp
             LOCAL_MODULE := copybit.$(TARGET_BOARD_PLATFORM)
             LOCAL_MODULE_TAGS := optional
-            LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
-            LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
-            LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
+            LOCAL_C_INCLUDES += hardware/qcom/libgralloc
             LOCAL_CFLAGS += -DCOPYBIT_MSM7K=1
             include $(BUILD_SHARED_LIBRARY)
         endif

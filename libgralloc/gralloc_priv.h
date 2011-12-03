@@ -304,6 +304,9 @@ struct private_handle_t {
     int     format;
     int     width;
     int     height;
+    
+    int     gpu_fd; // stored as an int, b/c we don't want it marshalled
+    int     map_offset;
 
 #ifdef __cplusplus
     static const int sNumInts = 13;
@@ -313,7 +316,7 @@ struct private_handle_t {
     private_handle_t(int fd, int size, int flags, int bufferType, int format, int width, int height) :
         fd(fd), magic(sMagic), flags(flags), size(size), offset(0), bufferType(bufferType),
         base(0), lockState(0), writeOwner(0), gpuaddr(0), pid(getpid()), format(format), width(width),
-        height(height)
+        height(height),gpu_fd(-1),map_offset(-1)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;

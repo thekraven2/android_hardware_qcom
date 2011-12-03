@@ -20,7 +20,7 @@
 
 #include <cutils/log.h>
 
-#include <linux/msm_mdp.h>
+#include "msm_mdp.h"
 #include <linux/fb.h>
 
 #include <stdint.h>
@@ -35,7 +35,7 @@
 
 #include "copybit.h"
 
-#include "../libgralloc/gralloc_priv.h"
+#include <gralloc_priv.h>
 #include "software_converter.h"
 
 #define DEBUG_MDP_ERRORS 1
@@ -146,7 +146,20 @@ static void set_image(struct mdp_img *img, const struct copybit_image_t *rhs)
     img->height     = rhs->h;
     img->format     = get_format(rhs->format);
     img->offset     = hnd->offset;
+#if defined(COPYBIT_MSM7K)
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_PMEM_ADSP) {
+	img->offset += hnd->map_offset;
+	img->memory_id = hnd->gpu_fd;
+	if (img->format == MDP_RGBA_8888) {
+	    img->format = MDP_BGRA_8888;
+	}
+	else {
+	    img->memory_id = hnd->fd;
+	}
+    }
+#else
     img->memory_id  = hnd->fd;
+#endif
 }
 /** setup rectangles */
 static void set_rects(struct copybit_context_t *dev,
@@ -184,19 +197,25 @@ static void set_rects(struct copybit_context_t *dev,
     MULDIV(&e->src_rect.y, &e->src_rect.h, src->b - src->t, H);
 
     if (dev->mFlags & COPYBIT_TRANSFORM_FLIP_V) {
+    /*
         if (dev->mFlags & COPYBIT_TRANSFORM_ROT_90) {
             e->src_rect.x = e->src.width - (e->src_rect.x + e->src_rect.w) - horiz_padding;
         }else{
             e->src_rect.y = e->src.height - (e->src_rect.y + e->src_rect.h) - vert_padding;
         }
+    */
+	e->src_rect.y = e->src.height - (e->src_rect.y + e->src_rect.h);
     }
 
     if (dev->mFlags & COPYBIT_TRANSFORM_FLIP_H) {
+/*
         if (dev->mFlags & COPYBIT_TRANSFORM_ROT_90) {
             e->src_rect.y = e->src.height - (e->src_rect.y + e->src_rect.h) - vert_padding;
         }else{
             e->src_rect.x = e->src.width - (e->src_rect.x + e->src_rect.w) - horiz_padding;
         }
+*/
+	e->src_rect.x = e->src.width - (e->src_rect.x + e->src_rect.w);
     }
 }
 
@@ -204,10 +223,7 @@ static void set_rects(struct copybit_context_t *dev,
 static void set_infos(struct copybit_context_t *dev, struct mdp_blit_req *req, int flags) {
     req->alpha = dev->mAlpha;
     req->transp_mask = MDP_TRANSP_NOP;
-    req->flags = dev->mFlags | flags;
-#if defined(COPYBIT_QSD8K)
-    req->flags |= MDP_BLEND_FG_PREMULT;
-#endif
+    req->flags = dev->mFlags;// | flags;
 }
 
 /** copy the bits */
@@ -406,12 +422,12 @@ static int stretch_copybit(
             intersect(&clip, &bounds, &clip);
             mdp_blit_req* req = &list.req[list.count];
             int flags = 0;
-
+/*
             private_handle_t* src_hnd = (private_handle_t*)src->handle;
             if(src_hnd != NULL && src_hnd->flags & private_handle_t::PRIV_FLAGS_DO_NOT_FLUSH) {
                 flags |=  MDP_BLIT_NON_CACHED;
             }
- 
+*/
             set_infos(ctx, req, flags);
             set_image(&req->dst, dst);
             set_image(&req->src, src);

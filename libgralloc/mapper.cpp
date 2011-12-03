@@ -64,9 +64,13 @@ static int gralloc_map(gralloc_module_t const* module,
     void *mappedAddress;
     if (!(hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER)) {
         size_t size = hnd->size;
+        
+        size += hnd->offset;
+        
         sp<IMemAlloc> memalloc = getAllocator(hnd->flags) ;
         int err = memalloc->map_buffer(&mappedAddress, size,
                 hnd->offset, hnd->fd);
+                
         if(err) {
             LOGE("Could not mmap handle %p, fd=%d (%s)",
                     handle, hnd->fd, strerror(errno));
